@@ -19,7 +19,6 @@ jobs:
       - name: List repo
         run: |
           ls
-
       #Setup tools necessary for testing, search from marketplace
       - name: Setup Python
         uses: actions/setup-python@v5.3.0
@@ -31,12 +30,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install behave
-
       #Setup commands for test, junit-> test for individual components
       - name: run bahave test
         run: |
           behave features/ --junit --junit-directory=test-results
-
           
       - name: upload test results
         if: always()  # executes regardless of the outcome
@@ -81,7 +78,7 @@ jobs:
             > and KemingHe's contribution.
             > **DO NOT** close this issue until resolved.
 
-# Week13 - Step 6b: Send Telegram Message on failure 
+      # Week13 - Step 6b: Send Telegram Message on failure 
       - name: Send Telegram Message on Test Failure(s)
         if: failure()
         env:
@@ -91,4 +88,70 @@ jobs:
           curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
           -d text="Review failed run, fix the issue(s), and re-run until successful."  
+    
+      # Step 6c: Annotate Test Failures (optional)
+      - name: Annotate Test Failures
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const resultsPath = path.join('test-results', 'TESTS-calculator.xml');
+            const results = fs.readFileSync(resultsPath, 'utf8');
+            core.setFailed(`Test Failures Detected:\n${results}`);
+    # Step 7: CD (Prepare files for delivery/deployment)-individual name
+    ##epv  - name: Prepare files
+    ##epv    run: |
+    ##epv      mkdir -p release
+    ##epv      cp -r ./calculator_pre_release.py ./release/Calculator.py
+    ##epv      echo "Deployment files prepared."
+    ##epv      ls -l ./release/
           
+    # Step 7: CD (Prepare files for delivery/deployment)-individual name
+      - name: Prepare files
+        run: |
+          mkdir -p release
+          cp -r ./calculator.py ./release/Calculator.py
+          echo "Deployment files prepared."
+          ls -l ./release/
+      # Step 8: Upload files to AWS S3
+      - name: Upload to AWS S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: |
+          aws s3 cp ./release s3://devops-calculator-app/release-files --recursive
+     
+      # Step 9: Download as zip and store in current action run
+      - name: Archive project files
+        run: |
+          zip -r deployment_files.zip ./release
+          mkdir -p artifacts
+          mv deployment_files.zip artifacts/ 
+      - name: Upload zip file as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-archive
+          path: artifacts/deployment_files.zip
+
+      # Step 10: Upload and create client files in S3
+      - name: Upload client files
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: |
+          aws s3 cp ./release s3://release-to-all/calculator --recursive
+          echo "calculator.py is available at: https://release-to-all.s3.ap-southeast-2.amazonaws.com/calculator/calculator.py"
+     
+      # Step 11: Send Telegram Message on Successful Application Deployment
+      - name: Send Telegram Message on Successful Deployment
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="Calculator.py successfully deployed to https://release-to-all.s3.ap-southeast-2.amazonaws.com/calculator/Calculator.py"
